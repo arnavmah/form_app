@@ -15,11 +15,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Student ID and Password are required' }, { status: 400 });
         }
 
+        const formattedStudentId = String(studentId).trim().toUpperCase();
+
         const students = await sql`
             SELECT s.*, sc.school_name, sc.udise_code, sc.intervention 
             FROM students s
             LEFT JOIN schools sc ON s.school_id = sc.school_id
-            WHERE s.unique_id = ${studentId} 
+            WHERE UPPER(TRIM(s.unique_id)) = ${formattedStudentId} 
             AND s.password = ${password}
             LIMIT 1
         `;

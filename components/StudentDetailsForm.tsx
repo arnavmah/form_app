@@ -142,12 +142,13 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
         setError(null);
         setLookupResult(null);
 
+        const formattedStudentId = studentId.trim().toUpperCase();
         const session = await getTeacherSession();
         const online = await checkActualConnectivity();
 
         if (!online) {
             // Offline verification
-            const student = await verifyStudentOffline(studentId, password);
+            const student = await verifyStudentOffline(formattedStudentId, password);
             if (student) {
                 const hasAccess = await checkOfflineStudentAccess(student.school_id);
                 if (!hasAccess) {
@@ -188,7 +189,7 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    studentId,
+                    studentId: formattedStudentId,
                     password,
                     assessmentId,
                     teacherId: session?.userId,
@@ -207,7 +208,7 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
             console.error('[StudentLogin] Network/Server Error:', err);
             
             // Fallback to offline verification if online request fails
-            const student = await verifyStudentOffline(studentId, password);
+            const student = await verifyStudentOffline(formattedStudentId, password);
             if (student) {
                 const hasAccess = await checkOfflineStudentAccess(student.school_id);
                 if (!hasAccess) {
@@ -263,7 +264,7 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
                             <input 
                                 type="text" 
                                 value={studentId} 
-                                onChange={e => setStudentId(e.target.value)}
+                                onChange={e => setStudentId(e.target.value.toUpperCase())}
                                 className="text-input"
                                 placeholder="e.g. PJMMH26..."
                                 required

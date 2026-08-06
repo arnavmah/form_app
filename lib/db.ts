@@ -992,10 +992,17 @@ export async function cacheStudents(students: CachedStudent[]): Promise<void> {
  * Offline student login verification
  */
 export async function verifyStudentOffline(uniqueId: string, password: string): Promise<CachedStudent | null> {
-    const student = await db.cachedStudents
+    const cleanId = uniqueId.trim().toUpperCase();
+    let student = await db.cachedStudents
         .where('unique_id')
-        .equals(uniqueId)
+        .equalsIgnoreCase(cleanId)
         .first();
+
+    if (!student) {
+        student = await db.cachedStudents
+            .filter(s => Boolean(s.unique_id && s.unique_id.trim().toUpperCase() === cleanId))
+            .first();
+    }
 
     if (student && student.password === password) {
         return student;
