@@ -101,7 +101,7 @@ function renderInput(
                 <MCQInput
                     options={question.options}
                     value={value.selectedOptions?.[0]}
-                    onChange={(optionId) => onChange({ selectedOptions: optionId ? [optionId] : [] })}
+                    onChange={(optionId) => onChange({ selectedOptions: optionId !== undefined ? [optionId] : [] })}
                     hasImages={hasOptionImages}
                     onImageClick={onImageClick}
                 />
@@ -122,7 +122,7 @@ function renderInput(
             return (
                 <TrueFalseInput
                     value={value.text}
-                    onChange={(text) => onChange({ text })}
+                    onChange={(text) => onChange({ text: text || '' })}
                 />
             );
 
@@ -199,25 +199,44 @@ function MCQInput({
     hasImages: boolean;
     onImageClick: (url: string) => void;
 }) {
+    const handleOptionClick = (optionId: number) => {
+        if (value === optionId) {
+            onChange(undefined);
+        } else {
+            onChange(optionId);
+        }
+    };
+
     return (
         <div className="input-group">
             <p className="input-label">Select one:</p>
             <div className={`options-container ${hasImages ? 'with-images' : ''}`}>
                 {options.map((opt, idx) => {
                     const optDir = detectScriptDirection(opt.option_text);
+                    const isSelected = value === opt.option_id;
                     return (
-                        <label
+                        <div
                             key={opt.option_id}
-                            className={`option-card ${value === opt.option_id ? 'selected' : ''}`}
+                            className={`option-card ${isSelected ? 'selected' : ''}`}
                             dir={optDir}
+                            onClick={() => handleOptionClick(opt.option_id)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (e.key === ' ' || e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleOptionClick(opt.option_id);
+                                }
+                            }}
                         >
                             <div className="option-header">
                                 <input
                                     type="radio"
                                     name={`mcq-${options[0].option_id}`}
-                                    checked={value === opt.option_id}
-                                    onChange={() => onChange(opt.option_id)}
+                                    checked={isSelected}
+                                    onChange={() => {}}
                                     className="radio-input"
+                                    tabIndex={-1}
                                 />
                                 <span className="option-letter">{String.fromCharCode(65 + idx)}</span>
                             </div>
@@ -237,7 +256,7 @@ function MCQInput({
                             {opt.option_text && (
                                 <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap', unicodeBidi: 'plaintext' }}>{opt.option_text}</span>
                             )}
-                        </label>
+                        </div>
                     );
                 })}
             </div>
@@ -274,18 +293,29 @@ function MultipleSelectInput({
             <div className={`options-container ${hasImages ? 'with-images' : ''}`}>
                 {options.map((opt, idx) => {
                     const optDir = detectScriptDirection(opt.option_text);
+                    const isSelected = value.includes(opt.option_id);
                     return (
-                        <label
+                        <div
                             key={opt.option_id}
-                            className={`option-card ${value.includes(opt.option_id) ? 'selected' : ''}`}
+                            className={`option-card ${isSelected ? 'selected' : ''}`}
                             dir={optDir}
+                            onClick={() => toggleOption(opt.option_id)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (e.key === ' ' || e.key === 'Enter') {
+                                    e.preventDefault();
+                                    toggleOption(opt.option_id);
+                                }
+                            }}
                         >
                             <div className="option-header">
                                 <input
                                     type="checkbox"
-                                    checked={value.includes(opt.option_id)}
-                                    onChange={() => toggleOption(opt.option_id)}
+                                    checked={isSelected}
+                                    onChange={() => {}}
                                     className="checkbox-input"
+                                    tabIndex={-1}
                                 />
                                 <span className="option-letter">{String.fromCharCode(65 + idx)}</span>
                             </div>
@@ -305,7 +335,7 @@ function MultipleSelectInput({
                             {opt.option_text && (
                                 <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap', unicodeBidi: 'plaintext' }}>{opt.option_text}</span>
                             )}
-                        </label>
+                        </div>
                     );
                 })}
             </div>
@@ -320,25 +350,46 @@ function TrueFalseInput({
     onChange
 }: {
     value?: string;
-    onChange: (value: string) => void;
+    onChange: (value?: string) => void;
 }) {
+    const handleOptionClick = (option: string) => {
+        if (value === option) {
+            onChange(undefined);
+        } else {
+            onChange(option);
+        }
+    };
+
     return (
         <div className="input-group">
             <div className="true-false-container">
-                {['True', 'False'].map((option) => (
-                    <label
-                        key={option}
-                        className={`tf-option ${value === option ? 'selected' : ''}`}
-                    >
-                        <input
-                            type="radio"
-                            checked={value === option}
-                            onChange={() => onChange(option)}
-                            className="radio-input"
-                        />
-                        <span>{option}</span>
-                    </label>
-                ))}
+                {['True', 'False'].map((option) => {
+                    const isSelected = value === option;
+                    return (
+                        <div
+                            key={option}
+                            className={`tf-option ${isSelected ? 'selected' : ''}`}
+                            onClick={() => handleOptionClick(option)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (e.key === ' ' || e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleOptionClick(option);
+                                }
+                            }}
+                        >
+                            <input
+                                type="radio"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                className="radio-input"
+                                tabIndex={-1}
+                            />
+                            <span>{option}</span>
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
