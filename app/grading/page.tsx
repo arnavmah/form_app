@@ -16,11 +16,13 @@ import {
     cacheSyncedSubmissions,
     getCachedSubmissionsForTeacher,
     saveOfflineGrade,
+    saveOfflineGradesBatch,
     getPendingOfflineGrades,
     markGradesAsSynced,
     getSubmissionIdsWithPendingGrades,
     type SyncedSubmission,
-    type SyncedAnswer
+    type SyncedAnswer,
+    type OfflineGradeInput
 } from '@/lib/db';
 import { checkActualConnectivity, syncSpecificSubmission } from '@/lib/sync';
 import { ImagePopup } from '@/components/ImagePopup';
@@ -95,6 +97,16 @@ export default function GradingPage() {
     const [pendingGradesCount, setPendingGradesCount] = useState(0);
     const [showSyncWarning, setShowSyncWarning] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+    // Autosave tracking
+    const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const dirtyGradesRef = useRef<Map<string, OfflineGradeInput>>(new Map());
+    const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const gradesRef = useRef<Record<number, Record<number, number>>>({});
+
+    useEffect(() => {
+        gradesRef.current = grades;
+    }, [grades]);
 
     // ── Session + connectivity ────────────────────────────────────────────────
 
@@ -240,12 +252,45 @@ export default function GradingPage() {
             localGradesMap[pg.submissionId][pg.answerId] = pg.marks;
         }
 
+        // Restore emergency localStorage backup if present from an abrupt browser close
+        if (typeof window !== 'undefined') {
+            try {
+                const rawBackup = localStorage.getItem('grading_unsaved_backup');
+                if (rawBackup) {
+                    const backupObj: Record<string, Record<string, number>> = JSON.parse(rawBackup);
+                    const backupBatch: OfflineGradeInput[] = [];
+                    for (const [subIdStr, ansMap] of Object.entries(backupObj)) {
+                        const subId = Number(subIdStr);
+                        for (const [ansIdStr, mark] of Object.entries(ansMap)) {
+                            const ansId = Number(ansIdStr);
+                            backupBatch.push({ submissionId: subId, answerId: ansId, marks: mark, isDraft: true });
+                            if (!localGradesMap[subId]) localGradesMap[subId] = {};
+                            localGradesMap[subId][ansId] = mark;
+                        }
+                    }
+                    if (backupBatch.length > 0) {
+                        await saveOfflineGradesBatch(backupBatch);
+                    }
+                    localStorage.removeItem('grading_unsaved_backup');
+                }
+            } catch (err) {
+                console.error('Error restoring localStorage backup:', err);
+            }
+        }
+
         const initialGrades: Record<number, Record<number, number>> = {};
         for (const sub of allSubs) {
             initialGrades[sub.submissionId] = {};
+            // Load all entries for this submission from localGradesMap first (including synthetic IDs)
+            if (localGradesMap[sub.submissionId]) {
+                for (const [ansIdStr, mark] of Object.entries(localGradesMap[sub.submissionId])) {
+                    initialGrades[sub.submissionId][Number(ansIdStr)] = mark;
+                }
+            }
             for (const ans of sub.subjectiveAnswers) {
-                const local = localGradesMap[sub.submissionId]?.[ans.answerId];
-                initialGrades[sub.submissionId][ans.answerId] = local ?? ans.marksAwarded ?? 0;
+                if (initialGrades[sub.submissionId][ans.answerId] === undefined) {
+                    initialGrades[sub.submissionId][ans.answerId] = ans.marksAwarded ?? 0;
+                }
             }
         }
         setGrades(prev => {
@@ -402,39 +447,130 @@ export default function GradingPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [online]);
 
-    // ── Sync logic ────────────────────────────────────────────────────────────
+    // ── Autosave & Sync logic ─────────────────────────────────────────────────
 
-    // ── Shared grade-flush helper ────────────────────────────────────────────────────────────────────
-    // Reads every entry from the grades[submissionId] map (including synthetic
-    // -questionId keys for skipped questions) and persists them to IndexedDB.
-    // Must be called before any sync reads from getPendingOfflineGrades().
-    // ── Shared grade-flush helper ────────────────────────────────────────────────────────────────────
-    // Reads every entry from the grades[submissionId] map (including synthetic
-    // -questionId keys for skipped questions) and persists them to IndexedDB.
+    // Asynchronous atomic autosave flush to IndexedDB
+    const performAutosave = useCallback(async () => {
+        if (dirtyGradesRef.current.size === 0) {
+            setAutosaveStatus('saved');
+            return;
+        }
+        const dirtyList = Array.from(dirtyGradesRef.current.values());
+        dirtyGradesRef.current.clear();
+        try {
+            setAutosaveStatus('saving');
+            await saveOfflineGradesBatch(dirtyList);
+            setAutosaveStatus('saved');
+            setHasUnsavedChanges(false);
+            if (typeof window !== 'undefined' && dirtyGradesRef.current.size === 0) {
+                try { localStorage.removeItem('grading_unsaved_backup'); } catch {}
+            }
+        } catch (err) {
+            console.error('[Autosave] Failed to persist draft grades:', err);
+            setAutosaveStatus('error');
+            // Re-queue items that failed so next autosave will retry
+            dirtyList.forEach(item => {
+                const key = `${item.submissionId}_${item.answerId}`;
+                if (!dirtyGradesRef.current.has(key)) {
+                    dirtyGradesRef.current.set(key, item);
+                }
+            });
+        }
+    }, []);
+
+    // Immediate blur save
+    const handleGradeBlur = useCallback(() => {
+        if (dirtyGradesRef.current.size > 0) {
+            if (autosaveTimerRef.current) {
+                clearTimeout(autosaveTimerRef.current);
+                autosaveTimerRef.current = null;
+            }
+            performAutosave();
+        }
+    }, [performAutosave]);
+
+    // Safety guard on window unload: save emergency backup to localStorage
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (dirtyGradesRef.current.size > 0) {
+                try {
+                    const dirtyObj: Record<number, Record<number, number>> = {};
+                    dirtyGradesRef.current.forEach(item => {
+                        if (!dirtyObj[item.submissionId]) dirtyObj[item.submissionId] = {};
+                        dirtyObj[item.submissionId][item.answerId] = item.marks;
+                    });
+                    const existing = JSON.parse(localStorage.getItem('grading_unsaved_backup') || '{}');
+                    const merged = { ...existing };
+                    for (const subId in dirtyObj) {
+                        merged[subId] = { ...(merged[subId] || {}), ...dirtyObj[subId] };
+                    }
+                    localStorage.setItem('grading_unsaved_backup', JSON.stringify(merged));
+                } catch {}
+
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            if (autosaveTimerRef.current) {
+                clearTimeout(autosaveTimerRef.current);
+            }
+        };
+    }, []);
+
+    // ── Shared grade-flush helper ─────────────────────────────────────────────
+    // Reads every entry from current grades map (including synthetic -questionId keys)
+    // and atomically persists them to IndexedDB using saveOfflineGradesBatch.
     // Must be called before any sync reads from getPendingOfflineGrades().
     const flushSubGrades = useCallback(async (subs: SyncedSubmission[], isDraft: boolean = true) => {
         console.log('[DEBUG] flushSubGrades started for submissions:', subs.map(s => s.submissionId), 'isDraft:', isDraft);
+        if (autosaveTimerRef.current) {
+            clearTimeout(autosaveTimerRef.current);
+            autosaveTimerRef.current = null;
+        }
+        dirtyGradesRef.current.clear();
+
+        const batchItems: OfflineGradeInput[] = [];
+        const currentGrades = gradesRef.current;
+
         for (const sub of subs) {
-            const subGrades = grades[sub.submissionId];
+            const subGrades = currentGrades[sub.submissionId];
             console.log(`[DEBUG] flushSubGrades checking sub ${sub.submissionId}. Grades in memory:`, subGrades);
             if (!subGrades) {
                 console.warn(`[DEBUG] No grades found in React state for submission ${sub.submissionId}. Initializing with 0s.`);
-                // Fallback: If no entry exists in memory, write 0s for all subjective questions
                 for (const ans of sub.subjectiveAnswers) {
-                    console.log(`[DEBUG] Writing default 0 grade for sub ${sub.submissionId}, ans ${ans.answerId}`);
-                    await saveOfflineGrade(sub.submissionId, ans.answerId, 0, isDraft);
+                    batchItems.push({
+                        submissionId: sub.submissionId,
+                        answerId: ans.answerId,
+                        marks: 0,
+                        isDraft
+                    });
                 }
                 continue;
             }
-            // Iterate the grades MAP directly — not subjectiveAnswers — so
-            // synthetic answerId entries (for skipped questions) are included.
             for (const [answerIdStr, mark] of Object.entries(subGrades)) {
-                console.log(`[DEBUG] Saving offline grade for sub ${sub.submissionId}, answerId ${answerIdStr} = ${mark}`);
-                await saveOfflineGrade(sub.submissionId, Number(answerIdStr), mark, isDraft);
+                batchItems.push({
+                    submissionId: sub.submissionId,
+                    answerId: Number(answerIdStr),
+                    marks: mark,
+                    isDraft
+                });
             }
         }
+
+        if (batchItems.length > 0) {
+            await saveOfflineGradesBatch(batchItems);
+        }
+        if (typeof window !== 'undefined') {
+            try { localStorage.removeItem('grading_unsaved_backup'); } catch {}
+        }
+        setAutosaveStatus('saved');
         console.log('[DEBUG] flushSubGrades completed.');
-    }, [grades]);
+    }, []);
 
     // handleSyncGradedToServer
     // ─────────────────────────────────────────────────────────────────────────
@@ -668,16 +804,43 @@ export default function GradingPage() {
         finally { setVerifying(false); }
     };
 
-    // Grade change: update React state + persist to IndexedDB.
+    // Grade change: update React state immediately + debounce autosave to IndexedDB.
     // Intentionally does NOT reload the page or trigger any network calls.
-    const handleGradeChange = async (submissionId: number, answerId: number, value: number, maxMarks: number) => {
+    const handleGradeChange = useCallback((submissionId: number, answerId: number, value: number, maxMarks: number) => {
         const clamped = Math.max(0, Math.min(value, maxMarks));
         setGrades(prev => ({
             ...prev,
             [submissionId]: { ...prev[submissionId], [answerId]: clamped }
         }));
         setHasUnsavedChanges(true);
-    };
+        setAutosaveStatus('saving');
+
+        const item: OfflineGradeInput = {
+            submissionId,
+            answerId,
+            marks: clamped,
+            isDraft: true
+        };
+        const key = `${submissionId}_${answerId}`;
+        dirtyGradesRef.current.set(key, item);
+
+        // Synchronous emergency backup in localStorage
+        if (typeof window !== 'undefined') {
+            try {
+                const currentBackup = JSON.parse(localStorage.getItem('grading_unsaved_backup') || '{}');
+                if (!currentBackup[submissionId]) currentBackup[submissionId] = {};
+                currentBackup[submissionId][answerId] = clamped;
+                localStorage.setItem('grading_unsaved_backup', JSON.stringify(currentBackup));
+            } catch {}
+        }
+
+        if (autosaveTimerRef.current) {
+            clearTimeout(autosaveTimerRef.current);
+        }
+        autosaveTimerRef.current = setTimeout(() => {
+            performAutosave();
+        }, 600);
+    }, [performAutosave]);
 
     // ── Loading / Auth screens ────────────────────────────────────────────────
 
@@ -840,6 +1003,24 @@ export default function GradingPage() {
                             </span>
                         )}
                     </span>
+                    {autosaveStatus === 'saving' && (
+                        <span className="autosave-badge saving" title="Saving draft to browser storage">
+                            <span className="material-symbols-rounded autosave-icon animate-spin">sync</span>
+                            Saving draft...
+                        </span>
+                    )}
+                    {autosaveStatus === 'saved' && (
+                        <span className="autosave-badge saved" title="All draft changes saved locally">
+                            <span className="material-symbols-rounded autosave-icon">check_circle</span>
+                            Draft saved
+                        </span>
+                    )}
+                    {autosaveStatus === 'error' && (
+                        <span className="autosave-badge error" title="Autosave encountered an error">
+                            <span className="material-symbols-rounded autosave-icon">error</span>
+                            Autosave error
+                        </span>
+                    )}
                     <button 
                         onClick={() => router.push('/students')}
                         className="manage-students-btn"
@@ -960,6 +1141,7 @@ export default function GradingPage() {
                         submissions={needsGrading}
                         grades={grades}
                         onGradeChange={handleGradeChange}
+                        onGradeBlur={handleGradeBlur}
                     />
                 </div>
             )}
@@ -978,6 +1160,7 @@ export default function GradingPage() {
                         submissions={gradedPendingSync}
                         grades={grades}
                         onGradeChange={handleGradeChange}
+                        onGradeBlur={handleGradeBlur}
                         readOnly
                     />
                 </div>
@@ -1200,6 +1383,36 @@ export default function GradingPage() {
                 .status-badge.online { background: rgba(16, 185, 129, 0.1); color: var(--color-success); border-color: rgba(16, 185, 129, 0.2); }
                 .status-badge.offline { background: rgba(245, 158, 11, 0.1); color: var(--color-warning); border-color: rgba(245, 158, 11, 0.2); }
                 
+                .autosave-badge {
+                    padding: 6px 12px;
+                    border-radius: var(--radius-md);
+                    font-size: 13px;
+                    font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-family: var(--font-sans);
+                    transition: all 0.2s ease;
+                }
+                .autosave-badge.saving {
+                    background: rgba(59, 130, 246, 0.1);
+                    color: #2563eb;
+                    border: 1.5px solid rgba(59, 130, 246, 0.2);
+                }
+                .autosave-badge.saved {
+                    background: rgba(16, 185, 129, 0.1);
+                    color: var(--color-success);
+                    border: 1.5px solid rgba(16, 185, 129, 0.2);
+                }
+                .autosave-badge.error {
+                    background: rgba(239, 68, 68, 0.1);
+                    color: var(--color-error);
+                    border: 1.5px solid rgba(239, 68, 68, 0.2);
+                }
+                .autosave-icon {
+                    font-size: 16px;
+                }
+
                 .pending-badge {
                     padding: 8px 16px;
                     background: rgba(239, 68, 68, 0.1);
@@ -1664,10 +1877,11 @@ function formatRelativeTime(date: Date): string {
 
 // ─── GradingTable Component ───────────────────────────────────────────────────
 
-function GradingTable({ submissions, grades, onGradeChange, readOnly = false }: {
+function GradingTable({ submissions, grades, onGradeChange, onGradeBlur, readOnly = false }: {
     submissions: SyncedSubmission[];
     grades: Record<number, Record<number, number>>;
     onGradeChange: (subId: number, ansId: number, val: number, max: number) => void;
+    onGradeBlur?: () => void;
     readOnly?: boolean;
 }) {
     const [popupContent, setPopupContent] = useState<{title: string, text: string} | null>(null);
@@ -1776,6 +1990,7 @@ function GradingTable({ submissions, grades, onGradeChange, readOnly = false }: 
                                                                         parseFloat(e.target.value) || 0,
                                                                         q.maxMarks
                                                                     )}
+                                                                    onBlur={onGradeBlur}
                                                                     className="grade-input"
                                                                 />
                                                             )}
@@ -1822,6 +2037,7 @@ function GradingTable({ submissions, grades, onGradeChange, readOnly = false }: 
                                                                     parseFloat(e.target.value) || 0,
                                                                     q.maxMarks
                                                                 )}
+                                                                onBlur={onGradeBlur}
                                                                 className="grade-input"
                                                             />
                                                         )}

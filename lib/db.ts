@@ -766,6 +766,13 @@ export async function getCachedAssessmentsForTeacher(
     }));
 }
 
+export interface OfflineGradeInput {
+    submissionId: number;
+    answerId: number;
+    marks: number;
+    isDraft?: boolean;
+}
+
 /**
  * Save an offline grade
  */
@@ -809,6 +816,69 @@ export async function saveOfflineGrade(
             subjectiveAnswers: updatedAnswers
         });
     }
+}
+
+/**
+ * Atomically save a batch of offline grades in a single Dexie transaction
+ */
+export async function saveOfflineGradesBatch(
+    gradesList: OfflineGradeInput[]
+): Promise<void> {
+    if (!gradesList || gradesList.length === 0) return;
+
+    await db.transaction('rw', db.offlineGrades, db.syncedSubmissions, async () => {
+        const now = new Date();
+        const updatedSubsMap: Record<number, Record<number, number>> = {};
+
+        for (const item of gradesList) {
+            const isDraft = item.isDraft ?? true;
+            const existing = await db.offlineGrades
+                .where('[submissionId+answerId]')
+                .equals([item.submissionId, item.answerId])
+                .first();
+
+            if (existing) {
+                await db.offlineGrades.update(existing.id!, {
+                    marks: item.marks,
+                    gradedAt: now,
+                    synced: false,
+                    isDraft
+                });
+            } else {
+                await db.offlineGrades.add({
+                    submissionId: item.submissionId,
+                    answerId: item.answerId,
+                    marks: item.marks,
+                    gradedAt: now,
+                    synced: false,
+                    isDraft
+                });
+            }
+
+            if (item.submissionId > 0) {
+                if (!updatedSubsMap[item.submissionId]) {
+                    updatedSubsMap[item.submissionId] = {};
+                }
+                updatedSubsMap[item.submissionId][item.answerId] = item.marks;
+            }
+        }
+
+        // Update cached submissions in bulk
+        for (const [subIdStr, answerMarksMap] of Object.entries(updatedSubsMap)) {
+            const subId = Number(subIdStr);
+            const submission = await db.syncedSubmissions.get(subId);
+            if (submission) {
+                const updatedAnswers = submission.subjectiveAnswers.map(ans =>
+                    answerMarksMap[ans.answerId] !== undefined
+                        ? { ...ans, marksAwarded: answerMarksMap[ans.answerId] }
+                        : ans
+                );
+                await db.syncedSubmissions.update(subId, {
+                    subjectiveAnswers: updatedAnswers
+                });
+            }
+        }
+    });
 }
 
 /**
