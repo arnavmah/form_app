@@ -139,21 +139,34 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Validate clientSubmissionId format to prevent SQL syntax error
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const validClientSubmissionId = clientSubmissionId && uuidRegex.test(clientSubmissionId) ? clientSubmissionId : null;
+
         // Check for duplicate submission across all language variants (same group_identifier)
         const existing = await sql`
             SELECT 1 FROM submissions 
             WHERE assessment_id IN (
                 SELECT a2.assessment_id FROM assessments a1
                 JOIN assessments a2 ON (
-                    a2.group_identifier = a1.group_identifier
-                    OR (a1.group_identifier IS NULL AND a2.group_identifier IS NULL 
+                    (a1.group_identifier IS NOT NULL AND TRIM(a1.group_identifier) != '' AND a2.group_identifier = a1.group_identifier)
+                    OR (
+                        (a1.group_identifier IS NULL OR TRIM(a1.group_identifier) = '') 
+                        AND (a2.group_identifier IS NULL OR TRIM(a2.group_identifier) = '') 
                         AND LOWER(TRIM(a2.title)) = LOWER(TRIM(a1.title)) 
-                        AND a2.class_grade = a1.class_grade)
+                        AND a2.class_grade = a1.class_grade
+                    )
                 )
                 WHERE a1.assessment_id = ${assessmentId}
             )
             AND (
-                (${validStudentId}::integer IS NOT NULL AND student_id = ${validStudentId})
+                (${validStudentId}::integer IS NOT NULL AND (
+                    student_id = ${validStudentId}
+                    OR (
+                        LOWER(TRIM(student_first_name)) = LOWER(TRIM(${studentFirstName})) 
+                        AND LOWER(TRIM(student_last_name)) = LOWER(TRIM(${studentLastName || ''}))
+                    )
+                ))
                 OR 
                 (${validStudentId}::integer IS NULL 
                  AND LOWER(TRIM(student_first_name)) = LOWER(TRIM(${studentFirstName})) 
@@ -161,8 +174,8 @@ export async function POST(request: NextRequest) {
             )
             -- Exclude the current submission itself if we are retrying a sync for it
             AND (
-                ${clientSubmissionId || null}::uuid IS NULL 
-                OR client_submission_id IS DISTINCT FROM ${clientSubmissionId || null}::uuid
+                ${validClientSubmissionId}::uuid IS NULL 
+                OR client_submission_id IS DISTINCT FROM ${validClientSubmissionId}::uuid
             )
             LIMIT 1
         `;
