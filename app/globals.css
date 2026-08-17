@@ -2156,8 +2156,7 @@ textarea[dir="rtl"],
 .rtl-text {
   direction: rtl !important;
   text-align: right !important;
-  unicode-bidi: plaintext;
-  font-family: system-ui, -apple-system, 'Noto Nastaliq Urdu', 'Segoe UI', Roboto, sans-serif;
+  font-family: system-ui, -apple-system, 'Noto Nastaliq Urdu', 'Noto Sans Arabic', 'Segoe UI', Roboto, sans-serif;
 }
 
 .option-card[dir="rtl"] {
@@ -2177,11 +2176,7 @@ textarea[dir="ltr"],
 .ltr-text {
   direction: ltr !important;
   text-align: left !important;
-  unicode-bidi: plaintext;
 }
 
-[dir="auto"] {
-  unicode-bidi: plaintext;
-}
 
 

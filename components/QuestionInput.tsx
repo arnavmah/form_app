@@ -285,7 +285,7 @@ function MCQInput({
                                 />
                             )}
                             {opt.option_text && (
-                                <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap', unicodeBidi: 'plaintext' }}>{opt.option_text}</span>
+                                <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap' }}>{opt.option_text}</span>
                             )}
                         </div>
                     );
@@ -364,7 +364,7 @@ function MultipleSelectInput({
                                 />
                             )}
                             {opt.option_text && (
-                                <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap', unicodeBidi: 'plaintext' }}>{opt.option_text}</span>
+                                <span className="option-text" dir={optDir} style={{ whiteSpace: 'pre-wrap' }}>{opt.option_text}</span>
                             )}
                         </div>
                     );
