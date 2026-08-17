@@ -66,13 +66,14 @@ export async function GET(request: NextRequest) {
                         )
                     )
                     SELECT a.assessment_id, a.title, a.description, 
-                           a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year, a.intervention as assessment_type
+                           a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year, a.intervention as assessment_type,
+                           a.type, a.subtype, a.phase
                     FROM assessments a
                     JOIN public.assessment_languages al ON a.assessment_id = al.assessment_id
                     JOIN accessible_assessments aa ON a.assessment_id = aa.assessment_id
                     WHERE a.status = 'published'
                     ${parsedClassGrade ? sql`AND a.class_grade = ${parsedClassGrade}` : sql``}
-                    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention
+                    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention, a.type, a.subtype, a.phase
                     ORDER BY a.class_grade, a.title
                 `;
 
@@ -115,13 +116,14 @@ export async function GET(request: NextRequest) {
                         )
                     )
                     SELECT a.assessment_id, a.title, a.description, 
-                           a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year, a.intervention as assessment_type
+                           a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year, a.intervention as assessment_type,
+                           a.type, a.subtype, a.phase
                     FROM assessments a
                     JOIN public.assessment_languages al ON a.assessment_id = al.assessment_id
                     JOIN accessible_assessments aa ON a.assessment_id = aa.assessment_id
                     WHERE a.status = 'published'
                     ${parsedClassGrade ? sql`AND a.class_grade = ${parsedClassGrade}` : sql``}
-                    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention
+                    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention, a.type, a.subtype, a.phase
                     ORDER BY a.class_grade, a.title
                 `;
             }
@@ -132,12 +134,13 @@ export async function GET(request: NextRequest) {
             // M&E/Lead or no user - show all published assessments
             assessments = await sql`
                 SELECT a.assessment_id, a.title, a.description, a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, 
-                       a.group_identifier, a.academic_year, a.intervention as assessment_type
+                       a.group_identifier, a.academic_year, a.intervention as assessment_type,
+                       a.type, a.subtype, a.phase
                 FROM assessments a
                 JOIN public.assessment_languages al ON a.assessment_id = al.assessment_id
                 WHERE a.status = 'published'
                 ${parsedClassGrade ? sql`AND class_grade = ${parsedClassGrade}` : sql``}
-                GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention
+                GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention, a.type, a.subtype, a.phase
                 ORDER BY class_grade, title
             `;
         }

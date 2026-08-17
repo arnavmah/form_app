@@ -7,7 +7,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -43,6 +43,58 @@ interface Assessment {
   languages?: string[];
   group_identifier?: string;
   academic_year?: string;
+  type?: string;
+  subtype?: string;
+  phase?: string;
+  intervention?: string;
+  assessment_type?: string;
+}
+
+function getAssessmentType(a: Assessment): 'formative' | 'summative' | 'other' {
+  if (a.type) {
+    const t = a.type.toLowerCase().trim();
+    if (t === 'formative' || t === 'summative') return t;
+  }
+  const title = (a.title || '').toLowerCase();
+  if (title.includes('formative')) return 'formative';
+  if (title.includes('summative')) return 'summative';
+  return 'other';
+}
+
+function getAssessmentSubtype(a: Assessment): string {
+  if (a.subtype) {
+    return a.subtype.toUpperCase().trim();
+  }
+  const title = a.title || '';
+  if (/\bIP\b/i.test(title)) return 'IP';
+  if (/\bEOM\b/i.test(title)) return 'EOM';
+  if (/\bbaseline\b/i.test(title)) return 'BASELINE';
+  if (/\bendline\b/i.test(title)) return 'ENDLINE';
+  return '';
+}
+
+function getAssessmentPhase(a: Assessment): string {
+  if (a.phase) {
+    return a.phase.trim();
+  }
+  const title = a.title || '';
+  const match = title.match(/\b(Phase\s*\d+)\b/i);
+  if (match) {
+    return match[1].replace(/phase\s*/i, 'Phase ');
+  }
+  return '';
+}
+
+function getAssessmentYear(a: Assessment): string {
+  if (a.academic_year) {
+    return a.academic_year.trim();
+  }
+  const title = a.title || '';
+  const match = title.match(/\b(20\d{2}-\d{2})\b/);
+  if (match) {
+    return match[1];
+  }
+  return '';
 }
 
 export default function HomePage() {
@@ -63,6 +115,10 @@ export default function HomePage() {
   const [online, setOnline] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [selectedClass, setSelectedClass] = useState<number | 'all'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'formative' | 'summative'>('all');
+  const [selectedSubtype, setSelectedSubtype] = useState<string>('all');
+  const [selectedPhase, setSelectedPhase] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(null);
   const [syncQueueExpanded, setSyncQueueExpanded] = useState(false);
@@ -147,14 +203,8 @@ export default function HomePage() {
 
   // Load assessments (from cache first, then API if online)
   const loadAssessments = useCallback(async () => {
-    // Always load from cache first
-    let cached = await getCachedAssessments();
-
-    // Filter by class if needed
-    if (selectedClass !== 'all') {
-      cached = cached.filter(a => a.class_grade === selectedClass);
-    }
-
+    // Always load all from cache first
+    const cached = await getCachedAssessments();
     if (cached.length > 0) {
       setAssessments(cached);
     }
@@ -164,19 +214,13 @@ export default function HomePage() {
       try {
         // Use forceSyncAssessments so it goes through the cache and pruning pipeline
         const data = await forceSyncAssessments();
-
-        let filtered = data;
-        if (selectedClass !== 'all') {
-          filtered = filtered.filter(a => a.class_grade === selectedClass);
-        }
-
-        setAssessments(filtered);
+        setAssessments(data);
         await loadCachedForms();
       } catch (err) {
         console.error('Failed to sync assessments on load:', err);
       }
     }
-  }, [selectedClass, loadCachedForms, online]);
+  }, [loadCachedForms, online]);
 
   // Initial load
   useEffect(() => {
@@ -246,13 +290,6 @@ export default function HomePage() {
     };
   }, [loadCachedForms, loadAssessments, loadPendingSubmissions]);
 
-  // Refresh assessments when class filter changes
-  useEffect(() => {
-    if (!loading) {
-      loadAssessments();
-    }
-  }, [selectedClass, loadAssessments, loading]);
-
   // Manual sync handlers
   const handleSyncSchools = async () => {
     if (!online) return;
@@ -305,6 +342,40 @@ export default function HomePage() {
   // Get cached form IDs for highlighting
   const cachedFormIds = new Set(cachedForms.map(f => f.formId));
 
+  // Derive available academic years from assessments and cached forms
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<string>();
+    assessments.forEach(a => {
+      const yr = getAssessmentYear(a);
+      if (yr) yearsSet.add(yr);
+    });
+    cachedForms.forEach(f => {
+      const yr = getAssessmentYear({
+        assessment_id: f.formId,
+        title: f.formData.title,
+        description: null,
+        class_grade: f.formData.class_grade || 0,
+        academic_year: (f.formData as any).academic_year
+      });
+      if (yr) yearsSet.add(yr);
+    });
+
+    const standardYears = ['2026-27', '2025-26', '2024-25'];
+    standardYears.forEach(y => yearsSet.add(y));
+
+    return Array.from(yearsSet).sort().reverse();
+  }, [assessments, cachedForms]);
+
+  // Derive available phases for summative assessments
+  const availablePhases = useMemo(() => {
+    const phaseSet = new Set<string>(['Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5']);
+    assessments.forEach(a => {
+      const p = getAssessmentPhase(a);
+      if (p) phaseSet.add(p);
+    });
+    return Array.from(phaseSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [assessments]);
+
   // Filter assessments: when offline, only show cached ones
   // If assessments is empty but we have cached forms, derive from cached forms
   let displayedAssessments: Assessment[];
@@ -322,17 +393,43 @@ export default function HomePage() {
         language: undefined,
         languages: f.formData.languages || ['English'],
         group_identifier: undefined,
-        academic_year: undefined
+        academic_year: (f.formData as any).academic_year || undefined,
+        type: (f.formData as any).type || undefined,
+        subtype: (f.formData as any).subtype || undefined,
+        phase: (f.formData as any).phase || undefined,
+        assessment_type: (f.formData as any).intervention || undefined
       }));
     }
   } else {
     displayedAssessments = assessments;
   }
 
-  // Apply class filter (critical for offline when deriving from cached forms)
+  // 1. Apply class filter
   if (selectedClass !== 'all') {
     displayedAssessments = displayedAssessments.filter(a => a.class_grade === selectedClass);
   }
+
+  // 2. Apply Assessment Type filter (Formative / Summative)
+  if (selectedType !== 'all') {
+    displayedAssessments = displayedAssessments.filter(a => getAssessmentType(a) === selectedType);
+  }
+
+  // 3. Apply Formative Subtype filter (IP / EOM)
+  if (selectedType === 'formative' && selectedSubtype !== 'all') {
+    displayedAssessments = displayedAssessments.filter(a => getAssessmentSubtype(a) === selectedSubtype);
+  }
+
+  // 4. Apply Summative Phase filter
+  if (selectedType === 'summative' && selectedPhase !== 'all') {
+    displayedAssessments = displayedAssessments.filter(a => getAssessmentPhase(a).toLowerCase() === selectedPhase.toLowerCase());
+  }
+
+  // 5. Apply Academic Year filter
+  if (selectedYear !== 'all') {
+    displayedAssessments = displayedAssessments.filter(a => getAssessmentYear(a) === selectedYear);
+  }
+
+  const hasActiveFilters = selectedClass !== 'all' || selectedType !== 'all' || selectedSubtype !== 'all' || selectedPhase !== 'all' || selectedYear !== 'all';
 
   // Group assessments by class
   const groupedAssessments = displayedAssessments.reduce((groups, assessment) => {
@@ -727,7 +824,7 @@ export default function HomePage() {
           display: 'flex',
           alignItems: 'center',
           gap: '16px',
-          marginBottom: '32px',
+          marginBottom: '20px',
           paddingBottom: '16px',
           borderBottom: '1px solid var(--color-border)'
         }}>
@@ -743,25 +840,143 @@ export default function HomePage() {
           </h1>
         </header>
 
-        {/* Class Filter */}
-        <div className="filter-bar">
-          <label className="filter-label">Class:</label>
-          <div className="filter-chips">
-            <button
-              className={`filter-chip ${selectedClass === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedClass('all')}
+        {/* Top Filter Bar - Single Row */}
+        <div className="top-filter-bar">
+          {/* Class Filter */}
+          <div className="filter-group">
+            <label className="filter-group-label" htmlFor="filter-class">
+              <span className="material-symbols-rounded filter-icon">school</span>
+              Class
+            </label>
+            <select
+              id="filter-class"
+              className="filter-select"
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value === 'all' ? 'all' : Number(e.target.value))}
             >
-              All
-            </button>
-            {classOptions.map((grade) => (
+              <option value="all">All Classes</option>
+              {classOptions.map((grade) => (
+                <option key={grade} value={grade}>Class {grade}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-divider" />
+
+          {/* Assessment Type Filter (Formative / Summative) */}
+          <div className="filter-group">
+            <label className="filter-group-label" htmlFor="filter-type">
+              <span className="material-symbols-rounded filter-icon">category</span>
+              Type
+            </label>
+            <select
+              id="filter-type"
+              className="filter-select"
+              value={selectedType}
+              onChange={(e) => {
+                const val = e.target.value as 'all' | 'formative' | 'summative';
+                setSelectedType(val);
+                if (val !== 'formative') setSelectedSubtype('all');
+                if (val !== 'summative') setSelectedPhase('all');
+              }}
+            >
+              <option value="all">All Types</option>
+              <option value="formative">Formative</option>
+              <option value="summative">Summative</option>
+            </select>
+          </div>
+
+          {/* Conditional Sub-filter: Formative (IP / EOM) or Summative (Phase) */}
+          {selectedType === 'formative' && (
+            <>
+              <div className="filter-divider" />
+              <div className="filter-group animate-fadeIn">
+                <label className="filter-group-label" htmlFor="filter-subtype">
+                  <span className="material-symbols-rounded filter-icon">tune</span>
+                  Subtype
+                </label>
+                <select
+                  id="filter-subtype"
+                  className="filter-select filter-select-highlight"
+                  value={selectedSubtype}
+                  onChange={(e) => setSelectedSubtype(e.target.value)}
+                >
+                  <option value="all">All (IP & EOM)</option>
+                  <option value="IP">IP (In-Progress)</option>
+                  <option value="EOM">EOM (End of Module)</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {selectedType === 'summative' && (
+            <>
+              <div className="filter-divider" />
+              <div className="filter-group animate-fadeIn">
+                <label className="filter-group-label" htmlFor="filter-phase">
+                  <span className="material-symbols-rounded filter-icon">layers</span>
+                  Phase
+                </label>
+                <select
+                  id="filter-phase"
+                  className="filter-select filter-select-highlight"
+                  value={selectedPhase}
+                  onChange={(e) => setSelectedPhase(e.target.value)}
+                >
+                  <option value="all">All Phases</option>
+                  {availablePhases.map((phase) => (
+                    <option key={phase} value={phase}>{phase}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          <div className="filter-divider" />
+
+          {/* Academic Year Filter */}
+          <div className="filter-group">
+            <label className="filter-group-label" htmlFor="filter-year">
+              <span className="material-symbols-rounded filter-icon">calendar_month</span>
+              Year
+            </label>
+            <select
+              id="filter-year"
+              className="filter-select"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+            >
+              <option value="all">All Years</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-divider" />
+
+          {/* Active Filter Counter & Reset */}
+          <div className="filter-bar-end">
+            <span className="filter-results-count">
+              {displayedAssessments.length} {displayedAssessments.length === 1 ? 'assessment' : 'assessments'}
+            </span>
+            {hasActiveFilters && (
               <button
-                key={grade}
-                className={`filter-chip ${selectedClass === grade ? 'active' : ''}`}
-                onClick={() => setSelectedClass(grade)}
+                type="button"
+                className="filter-reset-btn"
+                onClick={() => {
+                  setSelectedClass('all');
+                  setSelectedType('all');
+                  setSelectedSubtype('all');
+                  setSelectedPhase('all');
+                  setSelectedYear('all');
+                }}
+                title="Reset all filters"
               >
-                {grade}
+                <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>close</span>
+                Reset
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -914,7 +1129,27 @@ export default function HomePage() {
                     <p className="hint">Save forms while online to use them offline.</p>
                   </>
                 ) : (
-                  <p>No assessments available{selectedClass !== 'all' ? ` for Class ${selectedClass}` : ''}.</p>
+                  <>
+                    <p>No assessments found matching the selected filters.</p>
+                    {hasActiveFilters && (
+                      <div style={{ marginTop: '12px' }}>
+                        <button
+                          type="button"
+                          className="filter-reset-btn"
+                          onClick={() => {
+                            setSelectedClass('all');
+                            setSelectedType('all');
+                            setSelectedSubtype('all');
+                            setSelectedPhase('all');
+                            setSelectedYear('all');
+                          }}
+                        >
+                          <span className="material-symbols-rounded" style={{ fontSize: '15px' }}>close</span>
+                          Clear all filters
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

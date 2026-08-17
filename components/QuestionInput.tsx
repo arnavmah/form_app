@@ -32,7 +32,35 @@ export type AnswerValue = {
 export function QuestionInput({ question, value, onChange, questionNumber }: QuestionInputProps) {
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
     const requiredMarker = question.is_required ? ' *' : '';
-    const marks = question.marks ? ` [${question.marks} marks]` : '';
+    
+    // Resolve question marks: check question.marks first, then check option marks for MCQs/Multiple Select
+    const calculatedMarks = React.useMemo(() => {
+        if (question.marks !== null && question.marks !== undefined && Number(question.marks) > 0) {
+            return Number(question.marks);
+        }
+        if (question.options && question.options.length > 0) {
+            if (question.question_type === 'multiple_select') {
+                const sum = question.options.reduce((acc, opt) => {
+                    const m = opt.marks ? parseFloat(String(opt.marks)) : 0;
+                    return opt.is_correct && m > 0 ? acc + m : acc;
+                }, 0);
+                if (sum > 0) return sum;
+            } else {
+                const correctOpt = question.options.find(opt => opt.is_correct);
+                if (correctOpt?.marks && Number(correctOpt.marks) > 0) {
+                    return Number(correctOpt.marks);
+                }
+                const maxOptMark = Math.max(...question.options.map(opt => Number(opt.marks) || 0));
+                if (maxOptMark > 0) return maxOptMark;
+            }
+        }
+        return question.marks !== null && question.marks !== undefined && Number(question.marks) > 0 ? Number(question.marks) : null;
+    }, [question]);
+
+    const marksText = calculatedMarks !== null && calculatedMarks !== undefined && calculatedMarks > 0
+        ? `[${calculatedMarks} ${calculatedMarks === 1 ? 'mark' : 'marks'}]`
+        : '';
+
     const qDir = detectScriptDirection(question.question_text);
 
     // Check if options have images
@@ -43,8 +71,11 @@ export function QuestionInput({ question, value, onChange, questionNumber }: Que
             {/* Question Header */}
             <div className="question-header" dir={qDir}>
                 <span className="question-number">Q{questionNumber}.</span>
-                <span className="question-text" dir={qDir} style={{ whiteSpace: 'pre-wrap' }}>{question.question_text}{requiredMarker}</span>
-                {marks && <span className="question-marks">{marks}</span>}
+                <span className="question-text" dir={qDir}>
+                    {question.question_text}
+                    {requiredMarker && <span className="question-required" style={{ color: 'var(--color-error)' }}>{requiredMarker}</span>}
+                </span>
+                {marksText && <span className="question-marks">{marksText}</span>}
             </div>
 
             {/* Question Image + Content Layout */}

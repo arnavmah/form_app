@@ -36,7 +36,8 @@ export { client };
 export async function getFullAssessment(assessmentId: number) {
   // Get assessment base info (language column is now removed from assessments table)
   const assessments = await sql`
-    SELECT assessment_id, title, description, class_grade, status, group_identifier, academic_year, total_marks
+    SELECT assessment_id, title, description, class_grade, status, group_identifier, academic_year, total_marks,
+           intervention as assessment_type, type, subtype, phase
     FROM assessments
     WHERE assessment_id = ${assessmentId}
   `;
@@ -164,11 +165,12 @@ export async function getFullAssessment(assessmentId: number) {
  */
 export async function getPublishedAssessmentsByClass(classGrade: number) {
   return sql`
-    SELECT a.assessment_id, a.title, a.description, a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year
+    SELECT a.assessment_id, a.title, a.description, a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, 
+           a.group_identifier, a.academic_year, a.intervention as assessment_type, a.type, a.subtype, a.phase
     FROM assessments a
     JOIN public.assessment_languages al ON a.assessment_id = al.assessment_id
     WHERE a.status = 'published' AND a.class_grade = ${classGrade}
-    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year
+    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention, a.type, a.subtype, a.phase
     ORDER BY a.title
     `;
 }
@@ -178,11 +180,12 @@ export async function getPublishedAssessmentsByClass(classGrade: number) {
  */
 export async function getAllPublishedAssessments() {
   return sql`
-    SELECT a.assessment_id, a.title, a.description, a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, a.group_identifier, a.academic_year
+    SELECT a.assessment_id, a.title, a.description, a.class_grade, ARRAY_AGG(DISTINCT al.language) as languages, 
+           a.group_identifier, a.academic_year, a.intervention as assessment_type, a.type, a.subtype, a.phase
     FROM assessments a
     JOIN public.assessment_languages al ON a.assessment_id = al.assessment_id
     WHERE a.status = 'published'
-    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year
+    GROUP BY a.assessment_id, a.title, a.description, a.class_grade, a.group_identifier, a.academic_year, a.intervention, a.type, a.subtype, a.phase
     ORDER BY a.class_grade, a.title
     `;
 }

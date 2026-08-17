@@ -107,6 +107,11 @@ export interface CachedAssessment {
     languages?: string[];
     group_identifier?: string;
     academic_year?: string;
+    type?: string;
+    subtype?: string;
+    phase?: string;
+    intervention?: string;
+    assessment_type?: string;
 }
 
 /** Cached student for offline login */
