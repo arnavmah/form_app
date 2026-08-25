@@ -11,13 +11,23 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'cohortId is required' }, { status: 400 });
         }
 
-        // Count students with this cohort ID to get the next sequence number
+        // Get maximum existing sequence suffix for this cohort ID
         const result = await sql`
-            SELECT COUNT(*) FROM students 
+            SELECT COALESCE(
+                MAX(
+                    CASE 
+                        WHEN LENGTH(unique_id) > LENGTH(unique_cohort_id) 
+                             AND SUBSTRING(unique_id FROM LENGTH(unique_cohort_id) + 1) ~ '^[0-9]+$'
+                        THEN SUBSTRING(unique_id FROM LENGTH(unique_cohort_id) + 1)::integer
+                        ELSE 0 
+                    END
+                ), 0
+            ) as max_seq 
+            FROM students 
             WHERE unique_cohort_id = ${cohortId}
         `;
 
-        const nextSeq = parseInt(result[0].count) + 1;
+        const nextSeq = parseInt(result[0].max_seq || 0) + 1;
         
         return NextResponse.json({ nextSeq });
     } catch (error) {

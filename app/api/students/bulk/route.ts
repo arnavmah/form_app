@@ -109,8 +109,21 @@ export async function POST(request: NextRequest) {
             const cohortId = `PJM${stateCode}${passingYear}${udiseLast5}`;
 
             if (!cohortCounters.has(cohortId)) {
-                const existingCount = await sql`SELECT COUNT(*) FROM students WHERE unique_cohort_id = ${cohortId}`;
-                cohortCounters.set(cohortId, parseInt(existingCount[0].count));
+                const existingMax = await sql`
+                    SELECT COALESCE(
+                        MAX(
+                            CASE 
+                                WHEN LENGTH(unique_id) > LENGTH(unique_cohort_id) 
+                                     AND SUBSTRING(unique_id FROM LENGTH(unique_cohort_id) + 1) ~ '^[0-9]+$'
+                                THEN SUBSTRING(unique_id FROM LENGTH(unique_cohort_id) + 1)::integer
+                                ELSE 0 
+                            END
+                        ), 0
+                    ) as max_seq 
+                    FROM students 
+                    WHERE unique_cohort_id = ${cohortId}
+                `;
+                cohortCounters.set(cohortId, parseInt(existingMax[0].max_seq || 0));
             }
             
             const nextVal = cohortCounters.get(cohortId)! + 1;
