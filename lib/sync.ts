@@ -377,6 +377,7 @@ export async function syncGradingData(): Promise<void> {
 
         const syncedSubs = data.submissions.map((sub: any) => ({
             submissionId: sub.submission_id,
+            studentId: sub.student_id ? parseInt(String(sub.student_id), 10) : null,
             studentFirstName: sub.student_first_name,
             studentLastName: sub.student_last_name,
             classGrade: sub.class_grade,

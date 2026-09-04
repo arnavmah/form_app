@@ -75,13 +75,7 @@ export async function POST(request: NextRequest) {
         if (assessmentId) {
             const existing = await sql`
                 SELECT 1 FROM submissions 
-                WHERE (
-                    student_id = ${student.student_id}
-                    OR (
-                        LOWER(TRIM(student_first_name)) = LOWER(TRIM(${student.first_name}))
-                        AND LOWER(TRIM(student_last_name)) = LOWER(TRIM(${student.last_name || ''}))
-                    )
-                )
+                WHERE student_id = ${student.student_id}
                 AND assessment_id IN (
                     SELECT a2.assessment_id FROM assessments a1
                     JOIN assessments a2 ON (

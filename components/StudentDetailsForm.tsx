@@ -94,7 +94,7 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
                     .where('formId')
                     .equals(aId)
                     .filter(s => {
-                        if (studentId && s.studentId) {
+                        if (studentId) {
                             return s.studentId === studentId;
                         }
                         return s.studentFirstName.toLowerCase().trim() === fnLower && s.studentLastName.toLowerCase().trim() === lnLower;
@@ -106,7 +106,7 @@ export function StudentDetailsForm({ assessmentGrade, assessmentId, onSubmit }: 
                     .where('assessmentId')
                     .equals(aId)
                     .filter(s => {
-                        if (studentId && s.studentId) {
+                        if (studentId) {
                             return s.studentId === studentId;
                         }
                         return s.studentFirstName.toLowerCase().trim() === fnLower && s.studentLastName.toLowerCase().trim() === lnLower;
