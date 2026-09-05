@@ -177,9 +177,11 @@ export async function POST(request: NextRequest) {
         
                 OR
         
-                -- If student ID does not exist, use name
+                -- If student ID does not exist, use name scoped to the specific school and grade
                 (
                     ${validStudentId}::integer IS NULL
+                    AND school_id = ${schoolId}
+                    AND class_grade = ${classGrade}
                     AND LOWER(TRIM(student_first_name)) =
                         LOWER(TRIM(${studentFirstName}))
                     AND LOWER(TRIM(student_last_name)) =
