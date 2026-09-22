@@ -154,6 +154,7 @@ export interface OfflineSubmission {
     errorMessage: string | null;
     submittedByTeacher?: number;  // User ID of teacher who submitted
     studentId?: number | null;    // Numeric ID of the student
+    uniqueId?: string | null;     // Unique string ID (e.g. PJMMH26001)
     deviceInfo?: any; // Track device OS, browser, model
     hasSubjectiveQuestions?: boolean; // true = needs teacher grading; false = auto-sync on reconnect
     assessmentTitle?: string;  // Assessment title for display in Recent Submissions
@@ -209,6 +210,7 @@ export interface SyncedSubmission {
     studentFirstName: string;
     studentLastName: string;
     studentId?: number | null;
+    uniqueId?: string | null;     // Unique string ID (e.g. PJMMH26001)
     classGrade: number;
     section: string;
     submittedAt: Date;

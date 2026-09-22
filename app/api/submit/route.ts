@@ -24,6 +24,7 @@ interface SubmitRequest {
     submittedByTeacher?: number;  // Teacher user ID if logged in
     deviceInfo?: any;
     studentId?: number;
+    uniqueId?: string;
 }
 
 interface AnswerData {
@@ -43,7 +44,7 @@ function getQuestionMaxMarks(question: any): number {
         const correctOption = question.options?.find((o: any) => o.is_correct);
         const correctOptMarks = correctOption?.marks ? parseFloat(String(correctOption.marks)) : 0;
         if (correctOptMarks > 0) return correctOptMarks;
-        
+
         let maxOptMarks = 0;
         if (question.options) {
             for (const opt of question.options) {
@@ -54,7 +55,7 @@ function getQuestionMaxMarks(question: any): number {
             }
         }
         return maxOptMarks || qMarks || 0;
-    } 
+    }
     else if (qType === 'multiple_select') {
         let correctSum = 0;
         if (question.options) {
@@ -65,7 +66,7 @@ function getQuestionMaxMarks(question: any): number {
             }
         }
         return correctSum || qMarks || 0;
-    } 
+    }
     else if (qType === 'ranking') {
         let maxOptMarks = 0;
         if (question.options) {
@@ -77,7 +78,7 @@ function getQuestionMaxMarks(question: any): number {
             }
         }
         return maxOptMarks || qMarks || 0;
-    } 
+    }
     else {
         return qMarks;
     }
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
         const body: SubmitRequest = await request.json();
 
         // Validate required fields
-        const { assessmentId, clientSubmissionId, schoolId, studentFirstName, studentLastName, selectedLanguage, geolocation, gender, classGrade, section, answers, submittedByTeacher, deviceInfo, studentId } = body;
+        const { assessmentId, clientSubmissionId, schoolId, studentFirstName, studentLastName, selectedLanguage, geolocation, gender, classGrade, section, answers, submittedByTeacher, deviceInfo, studentId, uniqueId } = body;
 
         if (!assessmentId || !schoolId || !studentFirstName || !selectedLanguage || !gender || !classGrade || !section) {
             return NextResponse.json(
@@ -118,9 +119,10 @@ export async function POST(request: NextRequest) {
             `;
             if (teacherRes.length > 0) {
                 const roleName = teacherRes[0].role_name;
-                if (roleName && ['Lead', 'Program Lead', 'Program Manager', 'PM', 'M&E'].includes(roleName.trim())) {
+                const isDisallowedRole = ['Lead', 'Program Lead', 'Program Manager', 'PM', 'M&E'].includes(roleName);
+                if (isDisallowedRole) {
                     return NextResponse.json(
-                        { error: 'Lead and Program Manager roles are not permitted to submit assessments. Please log in with a Teacher account.' },
+                        { error: 'Lead and Program Manager roles cannot submit assessments. Submissions are only allowed for Teachers.' },
                         { status: 403 }
                     );
                 }
@@ -136,6 +138,14 @@ export async function POST(request: NextRequest) {
             `;
             if (studentExists.length > 0) {
                 validStudentId = parseInt(String(studentId), 10);
+            }
+        }
+        if (!validStudentId && uniqueId) {
+            const studentExists = await sql`
+                SELECT student_id FROM students WHERE UPPER(TRIM(unique_id)) = ${String(uniqueId).trim().toUpperCase()} LIMIT 1
+            `;
+            if (studentExists.length > 0) {
+                validStudentId = studentExists[0].student_id;
             }
         }
 
@@ -196,7 +206,7 @@ export async function POST(request: NextRequest) {
             )
         
             LIMIT 1
-        `;        
+        `;
         if (existing.length > 0) {
             return NextResponse.json(
                 { error: 'You have already submitted this assessment.' },
@@ -223,7 +233,7 @@ export async function POST(request: NextRequest) {
                     calculatedTotalMarks += getQuestionMaxMarks(q);
                 })
             );
-            
+
             // Fallback to the total_marks column if questions sum to 0
             if (calculatedTotalMarks === 0 && assessmentSchema.total_marks) {
                 calculatedTotalMarks = parseFloat(String(assessmentSchema.total_marks));

@@ -378,6 +378,7 @@ export async function syncGradingData(): Promise<void> {
         const syncedSubs = data.submissions.map((sub: any) => ({
             submissionId: sub.submission_id,
             studentId: sub.student_id ? parseInt(String(sub.student_id), 10) : null,
+            uniqueId: sub.unique_id || null,
             studentFirstName: sub.student_first_name,
             studentLastName: sub.student_last_name,
             classGrade: sub.class_grade,
@@ -482,6 +483,7 @@ async function syncSubmission(submission: OfflineSubmission): Promise<void> {
                 answers: updatedAnswers,
                 submittedByTeacher: submission.submittedByTeacher || null,
                 studentId: submission.studentId || null,
+                uniqueId: submission.uniqueId || null,
                 deviceInfo: submission.deviceInfo || null
             })
         });
