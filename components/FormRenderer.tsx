@@ -241,6 +241,7 @@ export function FormRenderer({ formData, rawFormData, selectedLanguage, onComple
                         answers: processedAnswers,
                         submittedByTeacher: teacherSession?.userId || null,
                         studentId: studentDetails.studentId || null,
+                        uniqueId: studentDetails.uniqueId || null,
                         deviceInfo: {
                             deviceType,
                             osName,
@@ -306,6 +307,8 @@ export function FormRenderer({ formData, rawFormData, selectedLanguage, onComple
                     if (subjectiveAnswers.length > 0) {
                         await db.syncedSubmissions.put({
                             submissionId: result.submissionId,
+                            studentId: studentDetails.studentId || null,
+                            uniqueId: studentDetails.uniqueId || null,
                             studentFirstName: studentDetails.studentFirstName,
                             studentLastName: studentDetails.studentLastName,
                             classGrade: studentDetails.classGrade,
@@ -385,6 +388,7 @@ export function FormRenderer({ formData, rawFormData, selectedLanguage, onComple
                     status: 'pending',
                     submittedByTeacher: teacherSession?.userId,
                     studentId: studentDetails.studentId || null,
+                    uniqueId: studentDetails.uniqueId || null,
                     hasSubjectiveQuestions,
                     deviceInfo: {
                         deviceType,
