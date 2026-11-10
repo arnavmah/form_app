@@ -35,6 +35,8 @@ interface RecentSubmission {
     submission_id: number;
     student_first_name: string;
     student_last_name: string;
+    student_id?: number | null;
+    unique_id?: string | null;
     class_grade: number;
     section: string;
     submitted_at: string;
@@ -68,6 +70,8 @@ export default function GradingPage() {
         localId: number;
         studentFirstName: string;
         studentLastName: string;
+        studentId?: number | null;
+        uniqueId?: string | null;
         classGrade: number;
         section: string;
         assessmentTitle: string;
@@ -368,6 +372,8 @@ export default function GradingPage() {
                     localId: sub.localId!,
                     studentFirstName: sub.studentFirstName,
                     studentLastName: sub.studentLastName,
+                    studentId: sub.studentId,
+                    uniqueId: sub.uniqueId,
                     classGrade: sub.classGrade,
                     section: sub.section,
                     assessmentTitle,
@@ -1198,6 +1204,7 @@ export default function GradingPage() {
                         <table className="recent-table offline-pending-table">
                             <thead>
                                 <tr>
+                                    <th>Student ID</th>
                                     <th>Student</th>
                                     <th>Class</th>
                                     <th>School</th>
@@ -1209,6 +1216,11 @@ export default function GradingPage() {
                             <tbody>
                                 {offlinePendingSubs.map(sub => (
                                     <tr key={sub.localId}>
+                                        <td className="student-id-cell">
+                                            <span className="student-id-badge">
+                                                {sub.uniqueId || sub.studentId || '—'}
+                                            </span>
+                                        </td>
                                         <td className="student-name">
                                             {sub.studentFirstName} {sub.studentLastName}
                                             {sub.selectedLanguage && (
@@ -1270,6 +1282,7 @@ export default function GradingPage() {
                         <table className="recent-table">
                             <thead>
                                 <tr>
+                                    <th>Student ID</th>
                                     <th>Student</th>
                                     <th>Class</th>
                                     <th>School</th>
@@ -1282,6 +1295,11 @@ export default function GradingPage() {
                             <tbody>
                                 {recentSubmissions.map(sub => (
                                     <tr key={sub.submission_id}>
+                                        <td className="student-id-cell">
+                                            <span className="student-id-badge">
+                                                {sub.unique_id || sub.student_id || '—'}
+                                            </span>
+                                        </td>
                                         <td className="student-name">
                                             {sub.student_first_name} {sub.student_last_name}
                                             {sub.selected_language && (
@@ -1689,6 +1707,18 @@ export default function GradingPage() {
                 }
                 .recent-table tr:last-child td { border-bottom: none; }
                 .recent-table tr:hover td { background: var(--color-primary-light); }
+                .student-id-cell { white-space: nowrap; font-family: var(--font-sans); }
+                .student-id-badge {
+                    display: inline-block;
+                    font-family: monospace;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--color-primary);
+                    background: rgba(21, 65, 89, 0.08);
+                    padding: 3px 8px;
+                    border-radius: var(--radius-sm);
+                    letter-spacing: 0.02em;
+                }
                 .student-name { font-weight: 600; color: var(--color-primary); white-space: nowrap; font-family: var(--font-sans); }
                 .school-name { color: var(--color-text-secondary); font-size: 13px; max-width: 160px; font-family: var(--font-sans); }
                 .assessment-name { max-width: 200px; color: var(--color-text); font-weight: 500; font-family: var(--font-sans); }
