@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             studentId: student.student_id,
+            uniqueId: student.unique_id,
             studentFirstName: student.first_name,
             studentLastName: student.last_name,
             studentName: `${student.first_name} ${student.last_name}`,
