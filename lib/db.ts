@@ -210,7 +210,7 @@ export interface SyncedSubmission {
     studentFirstName: string;
     studentLastName: string;
     studentId?: number | null;
-    uniqueId?: string | null;     // Unique string ID (e.g. PJMMH26001)
+    uniqueId?: string | null;
     classGrade: number;
     section: string;
     submittedAt: Date;

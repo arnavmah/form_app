@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
                     s.student_first_name,
                     s.student_last_name,
                     s.student_id,
+                    st.unique_id,
                     s.class_grade,
                     s.section,
                     s.submitted_at,
@@ -67,6 +68,7 @@ export async function GET(request: NextRequest) {
                 FROM submissions s
                 JOIN assessments a ON s.assessment_id = a.assessment_id
                 LEFT JOIN schools sc ON s.school_id = sc.school_id
+                LEFT JOIN students st ON s.student_id = st.student_id
                 WHERE s.submitted_at >= NOW() - INTERVAL '24 hours'
                 ${teacherCondition}
                 ORDER BY s.submitted_at DESC
